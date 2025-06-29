@@ -19,7 +19,6 @@ function escapeHtml(text) {
 // Markdown básico: **negrito**, *itálico*, `código`, [link](url)
 function renderMarkdown(text) {
     let html = escapeHtml(text);
-
     // Links: [texto](url)
     html = html.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
     // URLs soltas
@@ -40,7 +39,7 @@ function renderMarkdown(text) {
 function appendMessage(text, sender) {
     const msg = document.createElement('div');
     msg.className = `message ${sender}`;
-    // Renderiza markdown apenas para IA, usuário pode ser só texto puro ou igual se preferir
+    // Renderiza markdown para a IA
     if (sender === 'ai') {
         msg.innerHTML = renderMarkdown(text);
     } else {
@@ -104,25 +103,16 @@ async function loadSidebarList() {
 function renderSidebarList() {
     const historyList = document.getElementById('history-list');
     historyList.innerHTML = '';
-    // Botão para ver todo o histórico
-    const allBtn = document.createElement('div');
-    allBtn.className = 'history-item' + (activeChatId === 'all' ? ' active' : '');
-    allBtn.textContent = 'Ver tudo';
-    allBtn.title = 'Exibir todo o histórico';
-    allBtn.onclick = () => {
-        activeChatId = 'all';
-        renderSidebarList();
-        renderAllChatsMessages();
-    };
-    historyList.appendChild(allBtn);
 
+    // Botão para criar novo chat (agora implícito ao clicar "Novo Chat")
     chatSidebarList.forEach((item) => {
         const wrapper = document.createElement('div');
         wrapper.className = 'history-item-wrapper';
         const el = document.createElement('div');
         el.className = 'history-item' + (item.chat_id === activeChatId ? ' active' : '');
-        el.textContent = (item.preview || '').slice(0, 40) + (item.preview && item.preview.length > 40 ? '...' : '');
-        el.title = item.preview;
+        const previewText = item.preview || 'Novo Chat';
+        el.textContent = previewText.slice(0, 40) + (previewText.length > 40 ? '...' : '');
+        el.title = previewText;
         el.onclick = () => {
             activeChatId = item.chat_id;
             renderSidebarList();
@@ -149,42 +139,32 @@ async function deleteChatById(chatId) {
     try {
         const res = await fetch(`http://localhost:3000/history/${chatId}`, { method: 'DELETE' });
         if (res.ok) {
-            // Se o chat apagado era o atual, limpa a tela
+            // Se o chat apagado era o atual, limpa a tela para um novo chat
             if (activeChatId === chatId) {
                 messagesDiv.innerHTML = '';
                 activeChatId = null;
+                 userInput.value = '';
             }
             await loadSidebarList();
-            // Se não houver mais chats, activeChatId = null
-            if (!chatSidebarList.length) {
-                activeChatId = null;
-                messagesDiv.innerHTML = '';
-            }
-            renderSidebarList();
+        } else {
+             alert('Erro ao apagar chat. Verifique o console.');
         }
     } catch (e) {
         alert('Erro ao apagar chat.');
     }
 }
 
-async function renderAllChatsMessages() {
+async function renderChatMessages(chatId) {
     messagesDiv.innerHTML = '';
-    for (const item of chatSidebarList) {
-        const res = await fetch(`http://localhost:3000/history/${item.chat_id}`);
+    if (!chatId) return;
+    try {
+        const res = await fetch(`http://localhost:3000/history/${chatId}`);
         if (res.ok) {
             const data = await res.json();
             data.messages.forEach(msg => appendMessage(msg.text, msg.role));
         }
-    }
-}
-
-async function renderChatMessages(chatId) {
-    messagesDiv.innerHTML = '';
-    if (!chatId) return;
-    const res = await fetch(`http://localhost:3000/history/${chatId}`);
-    if (res.ok) {
-        const data = await res.json();
-        data.messages.forEach(msg => appendMessage(msg.text, msg.role));
+    } catch(e) {
+        appendMessage('Erro ao carregar mensagens do histórico.', 'ai');
     }
 }
 
@@ -192,9 +172,10 @@ document.getElementById('new-chat-btn').onclick = () => {
     userInput.value = '';
     messagesDiv.innerHTML = '';
     activeChatId = null;
-    renderSidebarList();
+    renderSidebarList(); // Re-renderiza a lista para desmarcar o chat ativo
     tokenCountSpan.textContent = `Tokens: 0`;
-    responseTimeSpan.textContent = `Tempo: 0 ms`;
+    responseTimeSpan.textContent = `Tempo: 00:00.000`;
+    userInput.focus();
 };
 
 window.addEventListener('DOMContentLoaded', () => {
@@ -210,7 +191,12 @@ chatForm.addEventListener('submit', async (e) => {
     userInput.value = '';
     userInput.focus();
 
-    appendMessage('...', 'ai'); // Placeholder while waiting
+    const placeholder = document.createElement('div');
+    placeholder.className = 'message ai';
+    placeholder.textContent = '...';
+    messagesDiv.appendChild(placeholder);
+    messagesDiv.scrollTop = messagesDiv.scrollHeight;
+
 
     startTimer();
     try {
@@ -220,41 +206,46 @@ chatForm.addEventListener('submit', async (e) => {
             body: JSON.stringify({
                 message: text,
                 chat_id: activeChatId,
-                new_chat: activeChatId == null // use comparação explícita
+                new_chat: activeChatId === null
             })
         });
-        if (!res.ok) throw new Error('Backend offline');
-        const data = await res.json();
+
         const end = performance.now();
-        // Remove placeholder
-        const lastMsg = messagesDiv.querySelector('.message.ai:last-child');
-        if (lastMsg && lastMsg.textContent === '...') {
-            lastMsg.remove();
+        if (!res.ok) {
+            const errorData = await res.json();
+            throw new Error(errorData.response || 'Backend offline');
         }
-        // Atualiza histórico e chat_id
-        await loadSidebarList();
-        activeChatId = data.chat_id;
-        renderSidebarList();
-        if (activeChatId !== 'all') {
-            await renderChatMessages(activeChatId);
+        
+        const data = await res.json();
+        
+        // Remove placeholder e adiciona a resposta final da IA
+        placeholder.remove();
+        appendMessage(data.response, 'ai');
+
+        // Se era um novo chat, atualiza o ID ativo e recarrega a barra lateral
+        if (activeChatId === null) {
+            activeChatId = data.chat_id;
+            await loadSidebarList(); // Recarrega a sidebar para mostrar o novo chat
         }
+        
         // Atualiza stats
         const tokens = countTokens(data.response || '');
         tokenCountSpan.textContent = `Tokens: ${tokens}`;
         stopTimerAndShow(end - startTime);
-        // Esconde alerta se estava visível
+
+        // Esconde alerta de erro se estava visível
         const alert = document.getElementById('backend-alert');
         if (alert) alert.style.display = 'none';
+
     } catch (err) {
-        // Remove placeholder
-        const lastMsg = messagesDiv.querySelector('.message.ai:last-child');
-        if (lastMsg && lastMsg.textContent === '...') {
-            lastMsg.remove();
-        }
-        appendMessage('Erro ao conectar ao backend.', 'ai');
-        // Mostra alerta visual
+        // Remove placeholder e mostra mensagem de erro no chat
+        placeholder.remove();
+        appendMessage(`Erro: ${err.message}`, 'ai');
+        
+        // Mostra alerta visual no topo
         const alert = document.getElementById('backend-alert');
         if (alert) alert.style.display = 'block';
+        
         // Zera stats
         tokenCountSpan.textContent = `Tokens: 0`;
         stopTimerAndShow(0);
@@ -262,7 +253,7 @@ chatForm.addEventListener('submit', async (e) => {
     }
 });
 
-// Optional: send message with Enter, new line with Shift+Enter
+// Opcional: envia mensagem com Enter, nova linha com Shift+Enter
 userInput.addEventListener('keydown', function(e) {
     if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
