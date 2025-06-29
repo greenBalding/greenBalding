@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Green Balding</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="backend-alert" style="display:none; background:#fee2e2; color:#991b1b; padding:10px; text-align:center; font-weight:bold;">
+        Erro ao conectar ao backend. Verifique se o servidor está rodando.<br>
+        <span style="font-size:0.95em;font-weight:normal;">
+            Dica: Sempre acesse este chat via <b>http://localhost:8080</b> ou outro servidor local, nunca abra o arquivo diretamente (file://).
+        </span>
+    </div>
+    <main class="main-layout">
+        <aside class="sidebar">
+            <button id="new-chat-btn">+ Novo Chat</button>
+            <div id="history-list" class="history-list"></div>
+        </aside>
+        <div class="chat-container">
+            <div id="messages" class="messages"></div>
+            <form id="chat-form" class="chat-form" autocomplete="off">
+                <input type="text" id="user-input" placeholder="Digite sua mensagem..." required autocomplete="off" />
+                <button type="submit">Enviar</button>
+            </form>
+            <div id="stats-footer">
+                <span id="token-count">Tokens: 0</span>
+                <span id="response-time">Tempo: 0 ms</span>
+            </div>
+        </div>
+    </main>
+    <script src="script.js"></script>
+</body>
+</html>
